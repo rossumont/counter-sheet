@@ -30,7 +30,8 @@
     .panel .info { font-size: 12px; opacity: .9; flex-basis: 100%; }
     .panel .spacer { flex: 1; }
     .sheets { padding: 12px 16px; }
-    .page { width: 100%; box-sizing: border-box; }
+    .page { width: 100%; box-sizing: border-box; display: flex; flex-direction: column; min-height: 280mm; }
+    .bus-log-section { margin-top: auto !important; }
     @media screen {
         .page { border: 1px solid #ccc; padding: 10px; margin-bottom: 16px; }
     }
@@ -61,6 +62,16 @@
     table.bus-log-table { width: 100%; border-collapse: collapse; }
     table.bus-log-table th, table.bus-log-table td {
         border: 1px solid #000; padding: 4px; text-align: center; font-size: 11px;
+    }
+    table.bus-log-table td.in { padding: 0; }
+    table.bus-log-table td.in input {
+        width: 100%; box-sizing: border-box; border: 0; margin: 0;
+        padding: 4px 3px; font: inherit; font-size: 11px; text-align: center;
+        background: transparent; color: #000;
+    }
+    @media screen {
+        table.bus-log-table td.in input { background: #fffbe0; }
+        table.bus-log-table td.in input:focus { outline: 2px solid #1f3a5f; background: #fff; }
     }
     table.bus-log-table th {
         background-color: #f0f0f0 !important; font-weight: bold;
@@ -99,6 +110,13 @@ const T = {
 };
 let lang = "en", lastPages = 0, lastBuses = 0;
 
+// ข้อมูลคนขับที่กรอกไว้ (จำไว้ในเครื่อง ปิดแล้วเปิดใหม่ยังอยู่)
+const STORE = "tallySheetDrivers";
+let drivers = {};
+try { drivers = JSON.parse(localStorage.getItem(STORE)) || {}; } catch (e) { drivers = {}; }
+function saveDrivers() { try { localStorage.setItem(STORE, JSON.stringify(drivers)); } catch (e) {} }
+function esc(v) { return String(v).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;"); }
+
 function num(id, def) {
     const v = parseInt(document.getElementById(id).value, 10);
     return v > 0 ? v : def;
@@ -128,33 +146,34 @@ function render() {
             rows += "</tr>";
         }
 
-        // รถที่ "จุดตัดยอด" อยู่ในหน้านี้ (คันสุดท้ายที่ไม่เต็มคัน ใส่ไว้หน้าสุดท้าย)
-        let logRows = "", firstBus = 0, lastBus = 0;
-        for (let b = 1; b <= buses; b++) {
-            const bStart = (b - 1) * perBus + 1;
-            const bEnd = Math.min(total, b * perBus);
-            if (bEnd >= start && bEnd <= end) {
-                if (!firstBus) firstBus = b;
-                lastBus = b;
-                logRows += `<tr><td>${b}</td><td>${bStart} - ${bEnd}</td><td></td><td></td><td></td><td></td></tr>`;
+        // ตารางรถบัสรวมทุกคัน ใส่ไว้ด้านล่างของหน้าสุดท้ายหน้าเดียว
+        let logSection = "";
+        if (p === pages - 1) {
+            let logRows = "";
+            for (let b = 1; b <= buses; b++) {
+                const bStart = (b - 1) * perBus + 1;
+                const bEnd = Math.min(total, b * perBus);
+                const d = drivers[b] || {};
+                const cell = k => `<td class="in"><input data-b="${b}" data-k="${k}" value="${esc(d[k] || "")}"></td>`;
+                logRows += `<tr><td>${b}</td><td>${bStart} - ${bEnd}</td>${cell("name")}${cell("plate")}${cell("phone")}<td></td><td></td></tr>`;
             }
-        }
-
-        const logSection = logRows ? `
+            logSection = `
     <div class="bus-log-section">
-        <div class="bus-log-title">📋 ตารางบันทึกการปล่อยรถบัส (รอบที่ ${firstBus} - ${lastBus})</div>
+        <div class="bus-log-title">📋 ตารางบันทึกการปล่อยรถบัส (รอบที่ 1 - ${buses})</div>
         <table class="bus-log-table">
             <thead><tr>
-                <th style="width: 9%;">คันที่</th>
-                <th style="width: 16%;">ช่วงลำดับคน</th>
-                <th style="width: 22%;">ทะเบียนรถ / เบอร์รถ</th>
-                <th style="width: 21%;">เบอร์โทรคนขับ</th>
-                <th style="width: 16%;">จำนวนผู้โดยสาร</th>
-                <th style="width: 16%;">เวลาออกจริง</th>
+                <th style="width: 7%;">คันที่</th>
+                <th style="width: 13%;">ช่วงลำดับคน</th>
+                <th style="width: 20%;">ชื่อคนขับ</th>
+                <th style="width: 16%;">ทะเบียนรถ / เบอร์รถ</th>
+                <th style="width: 16%;">เบอร์โทรคนขับ</th>
+                <th style="width: 14%;">จำนวนผู้โดยสาร</th>
+                <th style="width: 14%;">เวลาออกจริง</th>
             </tr></thead>
             <tbody>${logRows}</tbody>
         </table>
-    </div>` : "";
+    </div>`;
+        }
 
         html += `
 <div class="page${p < pages - 1 ? " page-break" : ""}">
@@ -182,6 +201,12 @@ function applyLang() {
     document.getElementById("info").textContent = T[lang].info(lastPages, lastBuses);
 }
 
+document.getElementById("sheets").addEventListener("input", e => {
+    const t = e.target;
+    if (!t.dataset || !t.dataset.k) return;
+    (drivers[t.dataset.b] = drivers[t.dataset.b] || {})[t.dataset.k] = t.value;
+    saveDrivers();
+});
 document.getElementById("apply").onclick = render;
 document.getElementById("print").onclick = () => window.print();
 document.getElementById("lang").onclick = () => { lang = lang === "en" ? "th" : "en"; applyLang(); };
